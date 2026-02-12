@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>God of Thunder</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        --bg0: #04050a;
+        --bg1: #0a1022;
+        --txt: rgba(255,255,255,0.92);
+        --muted: rgba(255,255,255,0.70);
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+      html, body { height: 100%; width: 100%; }
+      body {
+        margin: 0;
+        overflow: hidden;
+        position: fixed;
+        inset: 0;
+        background:
+          radial-gradient(1200px 900px at 20% 10%, rgba(255, 220, 120, 0.10), transparent 55%),
+          radial-gradient(1200px 900px at 80% 25%, rgba(110, 160, 255, 0.08), transparent 60%),
+          linear-gradient(180deg, var(--bg1), var(--bg0));
+        color: var(--txt);
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        touch-action: none;
+        overscroll-behavior: none;
+      }
+      .wrap {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      canvas {
+        /* Size is controlled by JS so we preserve the *actual* backing resolution
+           aspect ratio (320x240, wide UI, etc) without stretching. */
+        display: block;
+        background: #000;
+        border-radius: 14px;
+        border: 1px solid rgba(255,255,255,0.12);
+        box-shadow: 0 18px 56px rgba(0,0,0,0.55);
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        outline: none;
+      }
+      .status {
+        position: fixed;
+        left: 10px;
+        bottom: 10px;
+        padding: 7px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,0.14);
+        background: rgba(0,0,0,0.38);
+        backdrop-filter: blur(8px);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+        font-family: var(--mono);
+        pointer-events: none;
+        user-select: none;
+      }
+      .overlay {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        pointer-events: auto;
+      }
+      .playBtn {
+        cursor: pointer;
+        user-select: none;
+        border: 0;
+        background: none;
+        padding: 0;
+        width: 148px;
+        height: 74px;
+        filter: drop-shadow(0 18px 40px rgba(0,0,0,0.60));
+      }
+      .playBtn svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .playBtn:active { transform: translateY(1px); }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    </div>
+    <div class="status" id="status">Loading...</div>
+
+    <div class="overlay" id="overlay">
+      <button class="playBtn" id="playBtn" aria-label="Play">
+        <svg viewBox="0 0 148 74" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+          <defs>
+            <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#ffe08a"/>
+              <stop offset="1" stop-color="#c48a26"/>
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="144" height="70" rx="10" fill="rgba(0,0,0,0.35)" stroke="rgba(255,255,255,0.18)" stroke-width="2"/>
+          <rect x="10" y="10" width="128" height="54" rx="8" fill="url(#g)" stroke="rgba(0,0,0,0.35)" stroke-width="2"/>
+          <path d="M62 24 L62 50 L90 37 Z" fill="rgba(15,14,10,0.85)"/>
+          <path d="M60 22 L60 52 L92 37 Z" fill="rgba(255,255,255,0.25)"/>
+        </svg>
+      </button>
+    </div>
+
+    <script>
+      const statusEl = document.getElementById("status");
+      const overlay = document.getElementById("overlay");
+      const playBtn = document.getElementById("playBtn");
+      const canvas = document.getElementById("canvas");
+
+      let runtimeReady = false;
+      let started = false;
+      let startRequested = false;
+
+      function hideOverlay() { overlay.classList.add("hidden"); }
+
+      function tryStart() {
+        if (started) return;
+        startRequested = true;
+        if (!runtimeReady) return;
+        const cm = (Module && typeof Module.callMain === "function")
+          ? Module.callMain
+          : (typeof globalThis.callMain === "function" ? globalThis.callMain : null);
+        if (!cm) return;
+        started = true;
+        hideOverlay();
+        canvas.focus();
+        // Defer callMain so runtime init can finish wiring JS bridges first.
+        setTimeout(function() { cm([]); }, 0);
+      }
+
+      function getPrimaryGamepad() {
+        const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+        for (let i = 0; i < pads.length; i++) {
+          const p = pads[i];
+          if (p && p.connected) return p;
+        }
+        return null;
+      }
+
+      function mapCodeToDosScancode(code) {
+        // DOS Set 1 scancodes used by game key_flag[].
+        const map = {
+          Escape: 1,
+          Digit1: 2, Digit2: 3, Digit3: 4, Digit4: 5, Digit5: 6,
+          Digit6: 7, Digit7: 8, Digit8: 9, Digit9: 10, Digit0: 11,
+          Minus: 12, Equal: 13, Backspace: 14, Tab: 15,
+          KeyQ: 16, KeyW: 17, KeyE: 18, KeyR: 19, KeyT: 20,
+          KeyY: 21, KeyU: 22, KeyI: 23, KeyO: 24, KeyP: 25,
+          BracketLeft: 26, BracketRight: 27, Enter: 28,
+          ControlLeft: 29, ControlRight: 29,
+          KeyA: 30, KeyS: 31, KeyD: 32, KeyF: 33, KeyG: 34,
+          KeyH: 35, KeyJ: 36, KeyK: 37, KeyL: 38,
+          Semicolon: 39, Quote: 40, Backquote: 41,
+          ShiftLeft: 42, Backslash: 43,
+          KeyZ: 44, KeyX: 45, KeyC: 46, KeyV: 47, KeyB: 48,
+          KeyN: 49, KeyM: 50, Comma: 51, Period: 52, Slash: 53,
+          ShiftRight: 54, AltLeft: 56, AltRight: 56, Space: 57,
+          F1: 59, F2: 60, F3: 61, F4: 62, F5: 63,
+          F6: 64, F7: 65, F8: 66, F9: 67, F10: 68,
+          Home: 71, ArrowUp: 72, PageUp: 73,
+          ArrowLeft: 75, ArrowRight: 77,
+          End: 79, ArrowDown: 80, PageDown: 81
+        };
+        return map[code] || 0;
+      }
+
+      // Emscripten runtime hooks (minimal, no debug console).
+      var Module = {
+        canvas: canvas,
+        print: function() {},
+        printErr: function() {},
+        setStatus: function(text) { statusEl.textContent = text; },
+        noInitialRun: true,
+        onRuntimeInitialized: function() {
+          runtimeReady = true;
+          statusEl.textContent = "Ready";
+
+          // Allow gamepad A / Start to begin without needing a mouse.
+          (function pollGamepadStart() {
+            if (started) return;
+            const p0 = getPrimaryGamepad();
+            if (p0 && p0.buttons) {
+              const a = p0.buttons[0] && p0.buttons[0].pressed;
+              const start = p0.buttons[9] && p0.buttons[9].pressed;
+              if (a || start) tryStart();
+            }
+            requestAnimationFrame(pollGamepadStart);
+          })();
+
+          // Bridge Gamepad API state into WASM (works even if raylib's web
+          // backend does not update IsGamepadButtonDown in our sync main loop).
+          (function pollGamepadToWasm() {
+            const setConn = Module._got_web_gamepad_set_connected;
+            const setBtn = Module._got_web_gamepad_set_button;
+            const setAxis = Module._got_web_gamepad_set_axis;
+            if (!setConn || !setBtn || !setAxis) {
+              requestAnimationFrame(pollGamepadToWasm);
+              return;
+            }
+
+            const p0 = getPrimaryGamepad();
+            const connected = !!(p0 && p0.connected);
+            setConn(0, connected ? 1 : 0);
+
+            if (connected) {
+              // Axes: raylib-compatible order.
+              const axes = p0.axes || [];
+              for (let i = 0; i < 6; i++) {
+                setAxis(0, i, (axes[i] || 0));
+              }
+
+              // Buttons: map standard Gamepad indices to our "custom codes".
+              const btn = p0.buttons || [];
+              const map = [
+                [1, 0],   // A
+                [2, 1],   // B
+                [3, 2],   // X
+                [4, 3],   // Y
+                [9, 4],   // LB
+                [10, 5],  // RB
+                [15, 6],  // LT
+                [16, 7],  // RT
+                [8, 8],   // Back
+                [7, 9],   // Start
+                [11, 12], // D-Up
+                [12, 13], // D-Down
+                [13, 14], // D-Left
+                [14, 15], // D-Right
+                [5, 10],  // L Stick
+                [6, 11],  // R Stick
+                [17, 16], // Guide
+              ];
+
+              for (const [custom, idx] of map) {
+                const b = btn[idx];
+                const pressed = !!(b && b.pressed);
+                const value = b ? (b.value || 0) : 0;
+                setBtn(0, custom, pressed ? 1 : 0, value);
+              }
+            }
+
+            requestAnimationFrame(pollGamepadToWasm);
+          })();
+
+          // Bridge browser keyboard events into DOS scancode state so input is
+          // reliable even if backend focus handling misses keys.
+          (function installKeyboardBridge() {
+            const setSc = Module._got_web_keyboard_set_scancode;
+            const clearAll = Module._got_web_keyboard_clear;
+            if (!setSc || !clearAll) return;
+
+            function onKey(ev, down) {
+              const dos = mapCodeToDosScancode(ev.code);
+              if (!dos) return;
+              setSc(dos, down ? 1 : 0);
+              ev.preventDefault();
+            }
+
+            window.addEventListener("keydown", function(ev) { onKey(ev, true); }, { passive: false });
+            window.addEventListener("keyup", function(ev) { onKey(ev, false); }, { passive: false });
+            window.addEventListener("blur", function() { clearAll(); });
+            document.addEventListener("visibilitychange", function() {
+              if (document.hidden) clearAll();
+            });
+          })();
+
+          // If the user clicked early, start now that bridges are installed.
+          if (startRequested) tryStart();
+        },
+      };
+
+      playBtn.addEventListener("click", function(ev) {
+        ev.preventDefault();
+        playBtn.blur();
+        tryStart();
+      });
+      canvas.addEventListener("click", function(ev) {
+        if (!started) {
+          ev.preventDefault();
+          tryStart();
+        }
+      });
+
+      // Fit the canvas into the viewport without stretching. This matters when
+      // the game switches between 320x240 and wide UI modes.
+      (function() {
+        let lastW = 0, lastH = 0, lastVW = 0, lastVH = 0;
+        function fit() {
+          const vw = window.innerWidth || 0;
+          const vh = window.innerHeight || 0;
+          const w = canvas.width || 320;
+          const h = canvas.height || 240;
+
+          if (w === lastW && h === lastH && vw === lastVW && vh === lastVH) return;
+          lastW = w; lastH = h; lastVW = vw; lastVH = vh;
+
+          const s = Math.max(1, Math.floor(Math.min(vw / w, vh / h)));
+          canvas.style.width = (w * s) + "px";
+          canvas.style.height = (h * s) + "px";
+        }
+
+        window.addEventListener("resize", fit, { passive: true });
+        // Raylib/Emscripten can change backing dimensions after init; poll lightly.
+        setInterval(fit, 250);
+        fit();
+      })();
+    </script>
+
+    {{{ SCRIPT }}}
+  </body>
+</html>
