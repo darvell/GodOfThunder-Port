@@ -1,0 +1,57 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux x86_64
+            binary: build/got
+            dist_name: GodOfThunder-Linux-x86_64
+          - os: macos-14
+            name: macOS ARM64
+            binary: build/got
+            dist_name: GodOfThunder-macOS-ARM64
+          - os: windows-latest
+            name: Windows x86_64
+            binary: build/Release/got.exe
+            dist_name: GodOfThunder-Windows-x86_64
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --target got
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp ${{ matrix.binary }} dist/
+          cp GOTRES.DAT GRAPHICS.GOT VERSION.GOT dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.dist_name }}
+          path: dist/
