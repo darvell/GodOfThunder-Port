@@ -6,6 +6,9 @@
 #include <errno.h>
 #include <time.h>
 #include <fcntl.h>
+#ifdef _MSC_VER
+#include <sys/stat.h>
+#endif
 
 #ifdef _MSC_VER
 #include <windows.h>
@@ -98,7 +101,15 @@ char* ultoa(unsigned long value, char* str, int base) {
 #endif /* !_MSC_VER */
 
 int _dos_open(const char* path, int oflag, int* out_handle) {
-  int fd = open(path, oflag, 0666);
+#ifdef _MSC_VER
+  /* Save files contain raw binary structures; never let the CRT translate
+     newline or CTRL+Z bytes as text. */
+  oflag |= _O_BINARY;
+  int create_mode = _S_IREAD | _S_IWRITE;
+#else
+  int create_mode = 0666;
+#endif
+  int fd = open(path, oflag, create_mode);
   if (fd < 0) {
     if (out_handle) *out_handle = -1;
     return errno ? errno : 1;
