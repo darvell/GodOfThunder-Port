@@ -114,21 +114,21 @@ xerase_actors(actor,draw_page);
 scr_index=index;
 scr_pic=pic;
 
-_fmemset(&num_var,0,4*26);
-_fmemset(&str_var,0,81*26);
+_fmemset(num_var, 0, sizeof(num_var));
+_fmemset(str_var, 0, sizeof(str_var));
 
 re_execute=0;
 run_script:                            //jump point for RUN command
 
-_fmemset(line_label,0,32*9);            //clear line label buffer
-_fmemset(line_ptr,0,4*32);               //clear line ptrs
+_fmemset(line_label, 0, sizeof(line_label)); //clear line label buffer
+_fmemset(line_ptr, 0, sizeof(line_ptr));   //clear line ptrs
 
-memset(gosub_stack,0,52);              //clear gosub stack
+memset(gosub_stack, 0, sizeof(gosub_stack)); //clear gosub stack
 gosub_ptr=0;
-for(i=0;i<11;i++){
+for(i=0;i<10;i++){
    for_var[i]=0;
    for_val[i]=0;
-   for_stack[i]=0;
+   for_stack[i]=NULL;
 }
 for_ptr=0;
 
